@@ -45,7 +45,8 @@ class DuplicateFinderTestCase(unittest.TestCase):
             }
 
             payload = {
-                "root_path": "."
+                "root_path": ".",
+                "save_path": "."
             }
 
             class MockFileReader():

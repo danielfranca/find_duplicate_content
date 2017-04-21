@@ -11,6 +11,10 @@ CHUNK_SIZE = 262144 # 256kb
 # and update the action index
 #################################################
 def run_next_action(state: dict, payload: dict, actions: list):
+    now = datetime.now().isoformat()
+    print("\n{} - state: {}".format(now, json.dumps(state, indent=4)))
+    print("{} - payload: {}".format(now, json.dumps(payload, indent=4)))
+
     save_state(state, payload)
 
     if len(actions) > 0:
@@ -24,25 +28,17 @@ def run_next_action(state: dict, payload: dict, actions: list):
 ###########################################
 # Decorator to run a pipeline process
 ###########################################
-def pipeline_process(required_parameters=[], fail_handler=None):
+def pipeline_process(required_parameters=[]):
     def decorator(fn):
         def wrapper(*args, **kwargs):
             state, payload, actions = args
             try:
                 validate_required_parameters(required_parameters, payload)
                 new_state = copy.deepcopy(state)
-
-                now = datetime.now().isoformat()
-                print("\n{} - state: {}".format(now, json.dumps(new_state, indent=4)))
-                print("{} - payload: {}".format(now, json.dumps(payload, indent=4)))
-
                 return fn(state=new_state, payload=payload, actions=actions)
             except Exception as ex:
                 state["last_error"] = str(ex)
-                if fail_handler:
-                    return fail_handler(state=state, payload=payload, actions=actions)
-                else:
-                    return state
+                return state
         return wrapper
 
     return decorator
@@ -75,7 +71,7 @@ def generate_content_hash(f):
 #####################################
 # Restore the app state
 #####################################
-def restore_state(state):
+def restore_state(state: dict):
     saved_state = {}
     save_path = state.get("save_path")
 

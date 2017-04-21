@@ -9,15 +9,15 @@ class Pipeline():
     def __init__(self, pipeline_processes):
         self.pipeline_processes = pipeline_processes
 
-    def start(self, state, payload, fail_function=None):
+    def start(self, state, payload):
         next_action_idx = state.get("next_action", 0)
-        return run_next_action(state, payload, pipeline_process[next_action_idx:], fail_function)
+        return run_next_action(state, payload, self.pipeline_processes[next_action_idx:])
 
 
 ##########################
 # Go through all the directory tree building a SHA1 structure
 ##########################
-@pipeline_process(required_parameters=["root_path"])
+@pipeline_process(required_parameters=["root_path", "save_path"])
 def build_structure(state: dict, payload: dict, actions: list):
     state["hash_structure"] = {}
     root_path = payload.get("root_path")
