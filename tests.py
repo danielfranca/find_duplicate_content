@@ -20,58 +20,58 @@ class DuplicateFinderTestCase(unittest.TestCase):
             "last_error": "Missing required parameter: root_path"
         }
 
-        self.assertEqual(build_structure(initial_state, {}, []), expected_state)
+        self.assertEqual(build_structure(initial_state, []), expected_state)
 
     def test_build_structure(self):
-        with mock.patch('os.walk') as os_walk:
-            os_walk.return_value = [
-                ('/dir1', ('subdir1',), ('filename1','filename2')),
-                ('/dir2', (), ('singlefile',)),
-                ('/dir3', ('subdir2', 'subdir3'), ('filename1equal',)),
-            ]
-            initial_state = {
-                "next_action": 0,
-                "last_error": None
-            }
+        initial_state = {
+            "next_action": 0,
+            "last_error": None,
+            "root_path": ".",
+            "save_file_path": None
+        }
 
-            expected_state = {
-                "next_action": 0,
-                "hash_structure": {
-                    "92af19e633fe03482882098e4ba7619afe09c547": ["filename2"],
-                    "f3390fe2e5546dac3d1968970df1a222a3a39c00": ["filename1", "filename1equal"],
-                    "fee3dd4822f64d1a12c9b6b945fc1c07ecf4981c": ["singlefile"]
-                },
-                "last_error": None
-            }
+        expected_state = {
+            "next_action": 0,
+            "hash_structure": {
+                "92af19e633fe03482882098e4ba7619afe09c547": ["filename2"],
+                "f3390fe2e5546dac3d1968970df1a222a3a39c00": ["filename1", "filename1equal"],
+                "fee3dd4822f64d1a12c9b6b945fc1c07ecf4981c": ["singlefile"]
+            },
+            "root_path": ".",
+            "save_file_path": None,
+            "last_error": None
+        }
 
-            payload = {
-                "root_path": ".",
-                "save_path": "."
-            }
+        class MockFileReader():
+            once = True
 
-            class MockFileReader():
-                once = True
+            def __init__(self, filename):
+                self.filename = filename
 
-                def __init__(self, filename):
-                    self.filename = filename
+            def __enter__(self):
+                return self
 
-                def read(self, size):
-                    if self.once:
-                        self.once = False
-                        if self.filename == 'filename1' or self.filename == 'filename1equal':
-                            return b"FOOBAR"
-                        elif self.filename == 'filename2':
-                            return b"FILENAME2"
-                        elif self.filename == 'singlefile':
-                            return b"SINGLEFILE"
-                    return None
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                pass
 
-            def mock_open(filename, mode='r'):
-                return MockFileReader(filename)
+            def read(self, size):
+                if self.once:
+                    self.once = False
+                    if self.filename == 'filename1' or self.filename == 'filename1equal':
+                        return b"FOOBAR"
+                    elif self.filename == 'filename2':
+                        return b"FILENAME2"
+                    elif self.filename == 'singlefile':
+                        return b"SINGLEFILE"
+                return None
 
-            self.maxDiff = None
-            with mock.patch('pipeline_lib.pipeline.open', mock_open):
-                self.assertEqual(build_structure(initial_state, payload, []), expected_state)
+        def mock_open(filename, mode='r'):
+            return MockFileReader(filename)
+
+        self.maxDiff = None
+        with mock.patch('pipeline_lib.pipeline.open', mock_open), mock.patch('os.path.isfile', return_value=True), \
+             mock.patch('glob.iglob', return_value=['filename1', 'filename2', 'singlefile', 'filename1equal']):
+            self.assertEqual(build_structure(initial_state, []), expected_state)
 
     def test_get_duplicated_content(self):
         hash_structure = {
@@ -85,7 +85,8 @@ class DuplicateFinderTestCase(unittest.TestCase):
             "next_action": 0,
             "duplicated_content": [],
             "last_error": None,
-            "save_path": ""
+            "save_file_path": "",
+            "hash_structure": hash_structure
         }
 
         expected_state = {
@@ -93,14 +94,11 @@ class DuplicateFinderTestCase(unittest.TestCase):
             "hash_structure": hash_structure,
             "duplicated_content": [["file1", "file2"], ["file4", "file5", "file6"]],
             "last_error": None,
-            "save_path": ""
+            "save_file_path": ""
         }
 
         self.maxDiff = None
-        payload = {
-            "hash_structure": hash_structure
-        }
-        self.assertEqual(get_duplicated_content(initial_state, payload, []), expected_state)
+        self.assertEqual(get_duplicated_content(initial_state, []), expected_state)
 
     def test_get_duplicated_content_empty_hash(self):
 
@@ -109,7 +107,8 @@ class DuplicateFinderTestCase(unittest.TestCase):
             "next_action": 0,
             "duplicated_content": [],
             "last_error": None,
-            "save_path": ""
+            "save_file_path": "",
+            "hash_structure": {}
         }
 
         expected_state = {
@@ -117,14 +116,10 @@ class DuplicateFinderTestCase(unittest.TestCase):
             "hash_structure": {},
             "duplicated_content": [],
             "last_error": None,
-            "save_path": ""
+            "save_file_path": ""
         }
 
-        payload = {
-            "hash_structure": {}
-        }
-
-        self.assertEqual(get_duplicated_content(initial_state, payload, []), expected_state)
+        self.assertEqual(get_duplicated_content(initial_state, []), expected_state)
 
     def test_generate_hash_small_file(self):
         class MockFileReader():
@@ -169,7 +164,7 @@ class DuplicateFinderTestCase(unittest.TestCase):
         expected_state = {
             "next_action": 0
         }
-        self.assertEqual(run_next_action(initial_state, {},  []), expected_state)
+        self.assertEqual(run_next_action(initial_state, []), expected_state)
 
     def test_run_next_action(self):
         initial_state = {
@@ -181,14 +176,14 @@ class DuplicateFinderTestCase(unittest.TestCase):
 
         called = False
 
-        def action(state, payload, actions):
+        def action(state, actions):
             nonlocal called
             called = True
             return state
 
         actions = [action]
 
-        self.assertEqual(run_next_action(initial_state, {}, actions), expected_state)
+        self.assertEqual(run_next_action(initial_state, actions), expected_state)
         self.assertTrue(called)
 
     def test_run_no_more_actions(self):
@@ -201,7 +196,7 @@ class DuplicateFinderTestCase(unittest.TestCase):
 
         actions = []
 
-        self.assertEqual(run_next_action(initial_state, {}, actions), expected_state)
+        self.assertEqual(run_next_action(initial_state, actions), expected_state)
 
     def test_save_and_restore_new_state(self):
         hash_structure = {
@@ -214,13 +209,10 @@ class DuplicateFinderTestCase(unittest.TestCase):
         state = {
             "next_action": 0,
             "root_path": "~/dir",
-            "save_path": "",
+            "save_file_path": "da39a3ee5e6b4b0d3255bfef95601890afd80709/970093678b182127f60bb51b8af2c94d539eca3a",
             "hash_structure": hash_structure,
             "duplicated_content": [["file1", "file2"], ["file4", "file5", "file6"]],
-            "last_error": None
-        }
-
-        payload = {
+            "last_error": None,
             "param1": "val1"
         }
 
@@ -233,19 +225,19 @@ class DuplicateFinderTestCase(unittest.TestCase):
 
         with mock.patch('json.dump', new=mock_json_dump):
             with mock.patch('pipeline_lib.utils.restore_state', return_value={}):
-                self.assertFalse(save_state(state, payload))
-                state["save_path"] = "./saved_state.json"
-                self.assertTrue(save_state(state, payload))
+                self.assertFalse(save_state(state))
+                state["save_file_path"] = "./saved_state.json"
+                self.assertTrue(save_state(state))
                 self.assertEqual(saved_data, json.dumps({
                     state["root_path"]: {
                         "state": {
                             "next_action": state["next_action"],
                             "hash_structure": state["hash_structure"],
                             "duplicated_content": state["duplicated_content"],
-                            "save_path": state["save_path"],
+                            "save_file_path": state["save_file_path"],
                             "last_error": None,
-                        },
-                        "payload": payload
+                            "root_path": "~/dir"
+                        }
                     }
                 }, indent=4, sort_keys=True))
 
@@ -260,15 +252,13 @@ class DuplicateFinderTestCase(unittest.TestCase):
         state = {
             "next_action": 0,
             "root_path": "~/dir",
-            "save_path": "",
+            "save_file_path": "",
             "hash_structure": hash_structure,
             "duplicated_content": [["file1", "file2"], ["file4", "file5", "file6"]],
-            "last_error": None
-        }
-
-        payload = {
+            "last_error": None,
             "param1": "val1"
         }
+
 
         saved_data = None
         self.maxDiff = None
@@ -282,7 +272,7 @@ class DuplicateFinderTestCase(unittest.TestCase):
                 "state": {
                     "next_action": 1,
                     "root_path": "/old_dir",
-                    "save_path": "./",
+                    "save_file_path": "./",
                     "hash_structure": hash_structure,
                     "last_error": "Something is broken"
                 }
@@ -291,9 +281,9 @@ class DuplicateFinderTestCase(unittest.TestCase):
 
         with mock.patch('json.dump', new=mock_json_dump):
             with mock.patch('pipeline_lib.utils.restore_state', return_value=restored_state):
-                self.assertFalse(save_state(state, payload))
-                state["save_path"] = "./saved_state.json"
-                self.assertTrue(save_state(state, payload))
+                self.assertFalse(save_state(state))
+                state["save_file_path"] = "./saved_state.json"
+                self.assertTrue(save_state(state))
 
                 restored_state.update({
                     state["root_path"]: {
@@ -302,9 +292,9 @@ class DuplicateFinderTestCase(unittest.TestCase):
                             "hash_structure": state["hash_structure"],
                             "duplicated_content": state["duplicated_content"],
                             "last_error": None,
-                            "save_path": state["save_path"]
-                        },
-                        "payload": payload
+                            "save_file_path": state["save_file_path"],
+                            "root_path": "~/dir"
+                        }
                     }
                 })
 

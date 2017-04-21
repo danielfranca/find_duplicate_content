@@ -10,18 +10,14 @@ CHUNK_SIZE = 262144 # 256kb
 # Run the next action in the pipeline
 # and update the action index
 #################################################
-def run_next_action(state: dict, payload: dict, actions: list):
-    now = datetime.now().isoformat()
-    print("\n{} - state: {}".format(now, json.dumps(state, indent=4)))
-    print("{} - payload: {}".format(now, json.dumps(payload, indent=4)))
-
-    save_state(state, payload)
-
+def run_next_action(state: dict, actions: list):
     if len(actions) > 0:
         state["next_action"] += 1
-        return actions[0](state, payload, actions[1:])
+        save_state(state)
+        return actions[0](state, actions[1:])
     else:
         state["next_action"] = 0
+        save_state(state)
         return state
 
 
@@ -31,11 +27,11 @@ def run_next_action(state: dict, payload: dict, actions: list):
 def pipeline_process(required_parameters=[]):
     def decorator(fn):
         def wrapper(*args, **kwargs):
-            state, payload, actions = args
+            state, actions = args
             try:
-                validate_required_parameters(required_parameters, payload)
+                validate_required_parameters(required_parameters, state)
                 new_state = copy.deepcopy(state)
-                return fn(state=new_state, payload=payload, actions=actions)
+                return fn(state=new_state, actions=actions)
             except Exception as ex:
                 state["last_error"] = str(ex)
                 return state
@@ -47,9 +43,9 @@ def pipeline_process(required_parameters=[]):
 # Check if the parameters are correclty being passed
 # to the pipeline process
 #####################################################
-def validate_required_parameters(parameters: list, payload: dict):
+def validate_required_parameters(parameters: list, state: dict):
     for parameter in parameters:
-        if parameter not in payload:
+        if parameter not in state:
             raise Exception("Missing required parameter: {}".format(parameter))
 
 
@@ -73,13 +69,13 @@ def generate_content_hash(f):
 #####################################
 def restore_state(state: dict):
     saved_state = {}
-    save_path = state.get("save_path")
+    save_file_path = state.get("save_file_path")
 
-    if save_path:
+    if save_file_path:
         try:
-            with open(save_path, "r") as f:
+            with open(save_file_path, "r") as f:
                 saved_state = json.load(f)
-        except:
+        except (FileNotFoundError, json.JSONDecodeError):
             return saved_state
 
     return saved_state
@@ -88,9 +84,11 @@ def restore_state(state: dict):
 #######################################
 # Save the app state into a json file
 #######################################
-def save_state(state: dict, payload: dict):
-    save_path = state.get("save_path")
-    if not save_path:
+def save_state(state: dict):
+    print("\n{} - state: {}".format(datetime.now().isoformat(), json.dumps(state, indent=4)))
+
+    save_file_path = state.get("save_file_path")
+    if not save_file_path:
         return False
 
     saved_state = restore_state(state)
@@ -98,18 +96,21 @@ def save_state(state: dict, payload: dict):
 
     new_state[state["root_path"]] = {
         "state": {
-            "next_action": state["next_action"],
-            "hash_structure": state["hash_structure"],
-            "duplicated_content": state["duplicated_content"],
-            "last_error": state["last_error"],
-            "save_path": state["save_path"]
-        },
-        "payload": payload
+            "next_action": state.get("next_action"),
+            "hash_structure": state.get("hash_structure"),
+            "duplicated_content": state.get("duplicated_content"),
+            "last_error": state.get("last_error"),
+            "root_path": state.get("root_path"),
+            "save_file_path": state.get("save_file_path")
+        }
     }
 
-    with open(state["save_path"], "w") as f:
-        json.dump(new_state, f, indent=4)
-        return True
+    try:
+        with open(state["save_file_path"], "w") as f:
+            json.dump(new_state, f, indent=4)
+            return True
+    except FileNotFoundError:
+        return False
 
     return False
 
